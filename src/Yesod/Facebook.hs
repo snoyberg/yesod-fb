@@ -48,7 +48,7 @@ class Y.Yesod master => YesodFacebook master where
 -- 'Y.GHandler'.  Just a convenience wrapper around
 -- 'fbCredentials'.
 getFbCredentials :: YesodFacebook master =>
-                    Y.GHandler sub master FB.Credentials
+                    Y.HandlerT master IO FB.Credentials
 getFbCredentials = fbCredentials <$> Y.getYesod
 
 
@@ -56,8 +56,8 @@ getFbCredentials = fbCredentials <$> Y.getYesod
 -- credentials.
 runYesodFbT ::
      YesodFacebook master =>
-     FB.FacebookT FB.Auth (Y.GHandler sub master) a
-  -> Y.GHandler sub master a
+     FB.FacebookT FB.Auth (Y.HandlerT master IO) a
+  -> Y.HandlerT master IO a
 runYesodFbT act = do
   master <- Y.getYesod
   let creds   = fbCredentials master
@@ -72,8 +72,8 @@ runYesodFbT act = do
 -- but it's provided for completeness' sake.
 runNoAuthYesodFbT ::
      YesodFacebook master =>
-     FB.FacebookT FB.NoAuth (Y.GHandler sub master) a
-  -> Y.GHandler sub master a
+     FB.FacebookT FB.NoAuth (Y.HandlerT master IO) a
+  -> Y.HandlerT master IO a
 runNoAuthYesodFbT act = do
   master <- Y.getYesod
   let manager = fbHttpManager master
@@ -91,7 +91,7 @@ runNoAuthYesodFbT act = do
 -- JSON).
 parseRealTimeUpdateNotifications ::
   (YesodFacebook master, A.FromJSON a) =>
-  Y.GHandler sub master (FB.RealTimeUpdateNotification a)
+  Y.HandlerT master IO (FB.RealTimeUpdateNotification a)
 parseRealTimeUpdateNotifications = do
   let myFail = fail . ("parseRealTimeUpdateNotifications: " ++)
   -- Get request's signature.
@@ -99,7 +99,7 @@ parseRealTimeUpdateNotifications = do
   case lookup "X-Hub-Signature" (W.requestHeaders waiReq) of
     Nothing  -> myFail "X-Hub-Signature not found."
     Just sig -> do
-      uncheckedData <- L.fromChunks <$> Y.lift (W.requestBody waiReq C.$$ CL.consume)
+      uncheckedData <- L.fromChunks <$> (Y.rawRequestBody C.$$ CL.consume)
       mcheckedData <- runYesodFbT $ FB.verifyRealTimeUpdateNotifications sig uncheckedData
       case mcheckedData of
         Nothing -> myFail "Signature is invalid."
@@ -120,7 +120,7 @@ parseRealTimeUpdateNotifications = do
 -- 'Y.notFound'.
 answerRealTimeUpdateChallenge ::
      FB.RealTimeUpdateToken
-  -> Y.GHandler sub master Y.RepPlain
+  -> Y.HandlerT master IO Y.RepPlain
 answerRealTimeUpdateChallenge token = do
   mhubMode        <- Y.lookupGetParam "hub.mode"
   mhubChallenge   <- Y.lookupGetParam "hub.challenge"
@@ -139,6 +139,6 @@ answerRealTimeUpdateChallenge token = do
 
 -- | Lookup and parse the @request_ids@ GET parameter
 -- <http://developers.facebook.com/docs/requests/>.
-lookupRequestIds :: Y.GHandler sub master (Maybe [FB.Id])
+lookupRequestIds :: Y.HandlerT master IO (Maybe [FB.Id])
 lookupRequestIds = (map FB.Id . T.splitOn ",") <$$> Y.lookupGetParam "request_ids"
   where (<$$>) = fmap . fmap
